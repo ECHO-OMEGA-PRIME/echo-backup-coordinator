@@ -1346,7 +1346,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
   if (method === 'OPTIONS') return cors();
 
-  // Unauthenticated: health only
+  // Unauthenticated: health + root
+  if (path === '/' && method === 'GET') return json({ service: 'echo-backup-coordinator', status: 'operational' });
   if (path === '/health' && method === 'GET') return handleHealth(env);
 
   // All other endpoints require auth
