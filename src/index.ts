@@ -81,6 +81,16 @@ function checkAuth(request: Request, env: Env): boolean {
   return key === env.ECHO_API_KEY;
 }
 
+// ─── KV-Based Rate Limiting ─────────────────────────────────────────────────
+
+async function checkRateLimit(env: Env, ip: string, limit = 60, windowSec = 60): Promise<boolean> {
+  const key = `rl:${ip}:${Math.floor(Date.now() / (windowSec * 1000))}`;
+  const count = parseInt(await env.CACHE.get(key) || '0');
+  if (count >= limit) return false;
+  await env.CACHE.put(key, String(count + 1), { expirationTtl: windowSec });
+  return true;
+}
+
 function nowISO(): string {
   return new Date().toISOString();
 }
@@ -1345,6 +1355,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const method = request.method;
 
   if (method === 'OPTIONS') return cors();
+
+  // ─── Rate Limiting ──────────────────────────────────────────────────────────
+  const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+  const isWrite = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+  const rateLimit = isWrite ? 60 : 120; // 60 req/min writes, 120 req/min reads
+  const allowed = await checkRateLimit(env, clientIp, rateLimit, 60);
+  if (!allowed) {
+    log('warn', 'Rate limit exceeded', { ip: clientIp, method, path });
+    return json({ ok: false, error: 'Rate limit exceeded — try again later' }, 429);
+  }
 
   // Unauthenticated: health + root
   if (path === '/' && method === 'GET') return json({ service: 'echo-backup-coordinator', status: 'operational' });
