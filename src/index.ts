@@ -19,6 +19,7 @@ export interface Env {
   SHARED_BRAIN: Fetcher;
   SWARM_BRAIN: Fetcher;
   WORKER_VERSION: string;
+  ECHO_API_KEY: string;
 }
 
 // ─── Structured Logging ──────────────────────────────────────────────────────
@@ -74,9 +75,10 @@ function cors(): Response {
   });
 }
 
-function checkAuth(request: Request): boolean {
+function checkAuth(request: Request, env: Env): boolean {
+  if (!env.ECHO_API_KEY) return false;
   const key = request.headers.get('X-Echo-API-Key');
-  return key === 'echo-omega-prime-forge-x-2026';
+  return key === env.ECHO_API_KEY;
 }
 
 function nowISO(): string {
@@ -248,7 +250,7 @@ async function ingestToBrain(env: Env, content: string, importance: number, tags
   try {
     await env.SHARED_BRAIN.fetch('https://brain/ingest', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Echo-API-Key': 'echo-omega-prime-forge-x-2026' },
+      headers: { 'Content-Type': 'application/json', 'X-Echo-API-Key': env.ECHO_API_KEY },
       body: JSON.stringify({
         instance_id: 'echo-backup-coordinator',
         role: 'assistant',
@@ -284,7 +286,7 @@ async function postMoltBook(env: Env, content: string, mood: string, tags: strin
 async function fetchFleetWorkers(env: Env): Promise<string[]> {
   try {
     const resp = await env.SHARED_BRAIN.fetch('https://brain/workers', {
-      headers: { 'X-Echo-API-Key': 'echo-omega-prime-forge-x-2026' },
+      headers: { 'X-Echo-API-Key': env.ECHO_API_KEY },
     });
     if (resp.ok) {
       const data = (await resp.json()) as { workers?: Array<{ name?: string; worker_name?: string }> };
@@ -1348,7 +1350,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (path === '/health' && method === 'GET') return handleHealth(env);
 
   // All other endpoints require auth
-  if (!checkAuth(request)) {
+  if (!checkAuth(request, env)) {
     return json({ ok: false, error: 'Unauthorized — X-Echo-API-Key header required' }, 401);
   }
 
